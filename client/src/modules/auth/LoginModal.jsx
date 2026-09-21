@@ -6,8 +6,8 @@ export default function LoginModal({ isOpen, onClose }) {
   const { login } = useAuth();
 
   const [mode, setMode] = useState('quick'); // 'quick' | 'credentials'
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('Ngangiang2026');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -195,6 +195,7 @@ export default function LoginModal({ isOpen, onClose }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Nhập mật khẩu"
+                autoComplete="new-password"
                 className="w-full p-3 text-sm rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-sky-500"
               />
             </div>

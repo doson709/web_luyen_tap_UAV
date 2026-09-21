@@ -5,8 +5,8 @@ import { Shield, Lock, User, LogIn, ArrowRight, Building2, CheckCircle2, AlertCi
 export default function LoginPage({ onLoginSuccess }) {
   const { login } = useAuth();
   
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('Ngangiang2026');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -62,7 +62,7 @@ export default function LoginPage({ onLoginSuccess }) {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                 Tên đăng nhập
@@ -77,6 +77,7 @@ export default function LoginPage({ onLoginSuccess }) {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Nhập tên tài khoản (ví dụ: admin)"
+                  autoComplete="username"
                   className="w-full h-12 pl-10 pr-4 text-sm font-semibold rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-slate-50/50 text-slate-900 transition-all"
                 />
               </div>
@@ -96,6 +97,7 @@ export default function LoginPage({ onLoginSuccess }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Nhập mật khẩu"
+                  autoComplete="new-password"
                   className="w-full h-12 pl-10 pr-4 text-sm font-semibold rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-slate-50/50 text-slate-900 transition-all"
                 />
               </div>
