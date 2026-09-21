@@ -55,10 +55,10 @@ Hệ thống hỗ trợ cả đăng nhập **1-Chạm (Quick Login)**, đăng nh
 - Bấm **`[Lưu lời giải thích]`**: Dữ liệu lưu ngay vào SQLite và hiển thị tức thì trên màn hình Zoom mà không cần tải lại trang.
 
 ### 3.3. Quản Lý Học Phần & Đề Mục Khoa Học
-- Tự động nạp sẵn **649 câu hỏi** từ 10 file Word giáo trình chuẩn:
-  * **Chương trình Hạng A (VLOS)**: HP1 (Pháp lý & Khí tượng), HP2 (Kiến thức cơ bản UAV), HP3 (Vận hành & Bất trắc), Kỹ năng điều khiển cơ bản, Thực hành nâng cao.
-  * **Chương trình Hạng B (BVLOS)**: HP1 (Kiến thức BVLOS), HP2 (Quy trình vận hành BVLOS), HP2 (Bảo dưỡng UAV).
-- Cây thư mục bên trái phân cấp rõ ràng theo từng Đề mục, kèm số lượng câu hỏi thực tế.
+- Tự động nạp sẵn **649 câu hỏi** từ 5 file Word giáo trình lý thuyết chuẩn (đã tinh gọn loại bỏ các học phần thực hành):
+  * **Chương trình Hạng A (VLOS)**: HP1 (Cơ sở pháp lý, khí tượng và quản lý vùng trời - 187 câu), HP2 (Kiến thức cơ bản về UAV - 215 câu), HP3 (Quy trình vận hành UAV và xử trí bất trắc - 147 câu).
+  * **Chương trình Hạng B (BVLOS)**: HP1 (Kiến thức UAV trong BVLOS - 50 câu), HP2 (Quy trình vận hành UAV trong BVLOS - 50 câu).
+- Cây thư mục bên trái phân cấp khoa học theo từng Học phần và Chuyên đề/Mục cụ thể, hiển thị trực quan số lượng câu hỏi thực tế.
 
 ### 3.4. Quản Lý Người Dùng & Tích Hợp SSO (Admin)
 - Thêm người dùng mới, gán vai trò (`admin`, `teacher`, `student`).
@@ -85,7 +85,7 @@ web-luyen-tap/
 │   │   │   ├── questions/              # Ngân hàng câu hỏi & Sửa giải thích
 │   │   │   └── practice/               # Phiên luyện tập, nộp bài, thống kê
 │   │   ├── scripts/
-│   │   │   └── import_docx.py          # Script bóc tách tự động 10 file docx
+│   │   │   └── import_docx.py          # Script bóc tách tự động 5 file docx chuẩn hóa lý thuyết
 │   │   ├── app.js                      # Cấu hình Express app
 │   │   └── server.js                   # Khởi chạy HTTP server
 │   └── package.json

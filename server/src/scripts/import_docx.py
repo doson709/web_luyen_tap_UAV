@@ -2,12 +2,10 @@ import os
 import sys
 import glob
 import re
+import shutil
 import sqlite3
+from datetime import datetime
 import docx
-from docx.oxml.text.paragraph import CT_P
-from docx.oxml.table import CT_Tbl
-from docx.table import Table
-from docx.text.paragraph import Paragraph
 
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -15,26 +13,67 @@ if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
 def clean_text(text):
     if not text:
         return ""
-    # Replace non-breaking spaces and strip
+    # Replace non-breaking spaces and normalize whitespace
     return text.replace('\xa0', ' ').strip()
 
+def clean_topic_title(raw_title, is_oral):
+    t = clean_text(raw_title)
+    # Remove trailing question counts e.g. (95 câu hỏi) or (22 CÂU)
+    t = re.sub(r'\s*\(\s*\d+\s*(?:câu|câu\s*hỏi|CÂU|CÂU\s*HỎI)\s*\)', '', t, flags=re.IGNORECASE).strip()
+    # Format Mục 1. -> Mục 1:
+    t = re.sub(r'^(?:MỤC|Mục)\s+(\d+)\.?', r'Mục \1:', t)
+    # Format oral topics
+    if is_oral:
+        t = re.sub(r'^(?:Chuyên đề|CHUYÊN ĐỀ)\s*\d*:\s*', '', t)
+        t = re.sub(r'^(?:PHẦN|Phần)\s+[I|V|X|\d]+\.?\s*', '', t)
+        t = re.sub(r'^(?:NGÂN HÀNG CÂU HỎI VẤN ĐÁP|Ngân hàng câu hỏi vấn đáp)\s*', '', t)
+        t = clean_text(t)
+        if t and not t.lower().startswith('vấn đáp'):
+            t = f"Vấn đáp: {t}"
+    return t
+
 def run_import():
-    # Database path
     script_dir = os.path.dirname(os.path.abspath(__file__))
     server_dir = os.path.dirname(os.path.dirname(script_dir))
     web_dir = os.path.dirname(server_dir)
     parent_dir = os.path.dirname(web_dir)
     db_path = os.path.join(server_dir, "data", "uav_practice.db")
     
-    print(f"[Import] Database: {db_path}")
-    print(f"[Import] Scanning docx files in: {parent_dir}")
+    print(f"[Import] Database path: {db_path}")
+    print(f"[Import] Docx source directory: {parent_dir}")
 
-    # Connect to SQLite
+    # 1. Backup existing DB if it exists
+    if os.path.exists(db_path):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = f"{db_path}.{ts}.bak"
+        shutil.copy2(db_path, backup_path)
+        print(f"[Import] Created backup at: {backup_path}")
+
+    # 2. Connect to SQLite
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
 
-    # Make sure tables exist
+    # Enable foreign keys
+    cur.execute("PRAGMA foreign_keys = ON;")
+
+    # 3. Create tables if not exist
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin', 'teacher', 'student')),
+      sso_id TEXT UNIQUE,
+      email TEXT,
+      department TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_login DATETIME
+    );
+    """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS programs (
       id TEXT PRIMARY KEY,
@@ -88,9 +127,48 @@ def run_import():
       updated_by INTEGER,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE,
-      FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE
+      FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
     );
     """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS practice_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      module_id TEXT,
+      topic_id TEXT,
+      title TEXT,
+      mode TEXT DEFAULT 'practice',
+      total_questions INTEGER DEFAULT 0,
+      completed_questions INTEGER DEFAULT 0,
+      correct_count INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS session_answers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      question_id INTEGER NOT NULL,
+      selected_answer TEXT,
+      is_correct INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (session_id) REFERENCES practice_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+    );
+    """)
+
+    # Clean old curriculum & questions (keeps users intact)
+    print("[Import] Cleaning obsolete questions, topics, modules...")
+    cur.execute("DELETE FROM session_answers;")
+    cur.execute("DELETE FROM practice_sessions;")
+    cur.execute("DELETE FROM questions;")
+    cur.execute("DELETE FROM topics;")
+    cur.execute("DELETE FROM modules;")
 
     # Seed programs
     programs = [
@@ -99,15 +177,17 @@ def run_import():
     ]
     cur.executemany("INSERT OR REPLACE INTO programs (id, name, code, description) VALUES (?, ?, ?, ?)", programs)
 
-    # Find all 10 docx files matching Hạng A / Hạng B
+    # 4. Find all 5 docx files
     docx_paths = sorted(glob.glob(os.path.join(parent_dir, "Hạng *.docx")))
-    print(f"[Import] Found {len(docx_paths)} syllabus docx files.")
+    print(f"[Import] Found {len(docx_paths)} docx files.")
 
     total_questions_imported = 0
+    modules_imported = 0
 
     for docx_path in docx_paths:
         fname = os.path.basename(docx_path)
-        print(f"\n---> Processing: {fname}")
+        print(f"\n=======================================================")
+        print(f"--> Processing: {fname}")
 
         # Parse filename: Hạng A - Lý Thuyết - HP1 - Cơ sở pháp lý...
         m = re.match(r"(Hạng [AB])\s*-\s*(Lý Thuyết|Thực Hành)\s*-\s*(HP\d+)\s*-\s*(.+)\.docx", fname, re.IGNORECASE)
@@ -120,162 +200,281 @@ def run_import():
         cat_code = "LT" if "Lý Thuyết" in category_str else "TH"
         module_id = f"{program_id}_{cat_code}_{hp_str}"
         module_title = f"{hp_str}: {title_str.strip()}"
-
         order_num = int(re.search(r"\d+", hp_str).group()) if re.search(r"\d+", hp_str) else 1
 
         cur.execute("""
             INSERT OR REPLACE INTO modules (id, program_id, code, category, title, description, order_num)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (module_id, program_id, hp_str, category_str.strip(), module_title, f"Học phần {hp_str} {category_str} môn huấn luyện UAV", order_num))
+        modules_imported += 1
 
         doc = docx.Document(docx_path)
 
-        current_section = "Trắc nghiệm"
-        current_topic_title = "Nội dung chung"
-        topic_count = 0
+        # Topic map for this module
+        topic_map = {}
+        topic_counter = 0
 
-        # Topic map for module
-        topic_id_map = {}
+        def get_or_create_topic(raw_title, is_oral_topic=False):
+            nonlocal topic_counter
+            clean_t = clean_topic_title(raw_title, is_oral_topic)
+            if not clean_t:
+                clean_t = f"Chủ đề {topic_counter + 1}"
 
-        def get_or_create_topic(title):
-            nonlocal topic_count
-            clean_t = clean_text(title)
-            # Remove trailing question counts e.g. (120 câu) or (7 câu)
-            clean_t_short = re.sub(r"\s*\(\d+\s*câu\)", "", clean_t).strip()
-            if not clean_t_short:
-                clean_t_short = f"Chủ đề {topic_count + 1}"
+            if clean_t in topic_map:
+                return topic_map[clean_t]
 
-            if clean_t_short in topic_id_map:
-                return topic_id_map[clean_t_short]
-
-            topic_count += 1
-            t_id = f"{module_id}_T{topic_count}"
+            topic_counter += 1
+            t_id = f"{module_id}_T{topic_counter}"
             cur.execute("""
                 INSERT OR REPLACE INTO topics (id, module_id, title, order_num)
                 VALUES (?, ?, ?, ?)
-            """, (t_id, module_id, clean_t_short, topic_count))
-            topic_id_map[clean_t_short] = t_id
+            """, (t_id, module_id, clean_t, topic_counter))
+            topic_map[clean_t] = t_id
             return t_id
 
-        # Iterate body children sequentially
-        for child in doc.element.body:
-            if isinstance(child, CT_P):
-                p = Paragraph(child, doc)
-                p_text = clean_text(p.text)
-                if not p_text:
-                    continue
+        # Parsing state
+        is_body = False
+        is_oral = False
+        cur_topic_title = "Nội dung chung"
+        cur_topic_id = None
+        current_q = None
 
-                if "NGÂN HÀNG CÂU HỎI TRẮC NGHIỆM" in p_text.upper():
-                    current_section = "Trắc nghiệm"
-                elif "NGÂN HÀNG CÂU HỎI VẤN ĐÁP" in p_text.upper():
-                    current_section = "Vấn đáp"
-                elif re.match(r"^\d+\.\s*Phần\s*\d+", p_text, re.IGNORECASE) or p_text.startswith("Phần "):
-                    current_topic_title = p_text
+        def save_current_question(q):
+            nonlocal total_questions_imported
+            if not q:
+                return
 
-            elif isinstance(child, CT_Tbl):
-                tbl = Table(child, doc)
-                if len(tbl.rows) < 2:
-                    continue
+            # Determine bloom level
+            bloom = "Vận dụng" if q['type'] == 'oral' else ("Thông hiểu" if q['type'] == 'true_false' else "Hiểu")
+            role = "Người điều khiển UAV"
 
-                # Inspect header row to determine table type
-                hdr_cells = [clean_text(c.text) for c in tbl.rows[0].cells]
-                hdr_sub = [clean_text(c.text) for c in tbl.rows[1].cells] if len(tbl.rows) > 1 else []
-                combined_hdr = " ".join(hdr_cells + hdr_sub).lower()
+            # Determine default explanation if empty
+            explanation = q.get('explanation', '')
+            if not explanation:
+                if q['type'] == 'oral':
+                    explanation = f"Tiêu chí đạt: {q.get('criteria', '')}\nHướng dẫn trả lời: {q.get('correct_answer', '')}"
+                elif q['type'] == 'true_false':
+                    explanation = f"Căn cứ giáo trình huấn luyện tiêu chuẩn {hang_str} ({module_title}). Nhận định trên là: {q['correct_answer']}."
+                else:
+                    explanation = f"Căn cứ giáo trình huấn luyện tiêu chuẩn {hang_str} ({module_title}). Phương án chính xác là: {q['correct_answer']}."
 
-                current_topic_id = get_or_create_topic(current_topic_title)
+            cur.execute("""
+                INSERT OR REPLACE INTO questions 
+                (code, topic_id, module_id, question_type, bloom_level, target_role, stem, option_a, option_b, option_c, option_d, correct_answer, explanation, passing_criteria)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                q['code'],
+                q['topic_id'],
+                module_id,
+                q['type'],
+                bloom,
+                role,
+                q['stem'],
+                q.get('opt_a', ''),
+                q.get('opt_b', ''),
+                q.get('opt_c', ''),
+                q.get('opt_d', ''),
+                q['correct_answer'],
+                explanation,
+                q.get('criteria', '')
+            ))
+            total_questions_imported += 1
 
-                is_oral = "vấn đáp" in combined_hdr or "hướng dẫn trả lời" in combined_hdr or "tiêu chí đạt" in combined_hdr or current_section == "Vấn đáp"
+        for p in doc.paragraphs:
+            t = clean_text(p.text)
+            if not t:
+                continue
 
-                # Rows to skip: usually row 0 (group headers) and row 1 (column headers)
-                start_row = 2 if len(tbl.rows) > 2 and ("mã id" in combined_hdr or "câu dẫn" in combined_hdr) else 1
+            # Detect start of actual document body (skips Table of Contents)
+            if re.match(r'^MỤC\s+1\.', t):
+                is_body = True
+                cur_topic_title = t
+                cur_topic_id = get_or_create_topic(cur_topic_title, is_oral_topic=False)
+                continue
 
-                for r_idx in range(start_row, len(tbl.rows)):
-                    row = tbl.rows[r_idx]
-                    cells = [clean_text(c.text) for c in row.cells]
-                    if not any(cells):
-                        continue
+            if not is_body:
+                continue
 
-                    # Filter out any duplicate header row inside the table
-                    if "Mã ID" in cells[0] or "Câu dẫn" in " ".join(cells):
-                        continue
+            # Check next MCQ sections
+            if re.match(r'^MỤC\s+\d+\.', t):
+                cur_topic_title = t
+                cur_topic_id = get_or_create_topic(cur_topic_title, is_oral_topic=False)
+                continue
 
-                    if not is_oral:
-                        # MCQ or True/False table
-                        # Cols expected: [Mã ID, Đối tượng, Lĩnh vực, Bậc Bloom, Loại câu hỏi, Câu dẫn, Phương án A, B, C, D, Đáp án]
-                        if len(cells) >= 6:
-                            q_code = cells[0] if cells[0] else f"{module_id}_Q{total_questions_imported+1}"
-                            target_role = cells[1] if len(cells) > 1 else ""
-                            bloom_level = cells[3] if len(cells) > 3 else "Hiểu"
-                            q_type_str = cells[4] if len(cells) > 4 else "Trắc nghiệm"
-                            stem = cells[5] if len(cells) > 5 else ""
+            # Check oral section
+            if re.match(r'^PHẦN\s+II\.', t):
+                is_oral = True
+                cur_topic_title = t
+                continue
 
-                            if not stem:
-                                continue
+            # Check oral topic headings
+            if is_oral and (re.match(r'^Chuyên đề\s*\d*:', t) or re.match(r'^CHUYÊN ĐỀ\s*\d*:', t)):
+                cur_topic_title = t
+                cur_topic_id = get_or_create_topic(cur_topic_title, is_oral_topic=True)
+                continue
 
-                            opt_a = cells[6] if len(cells) > 6 else ""
-                            opt_b = cells[7] if len(cells) > 7 else ""
-                            opt_c = cells[8] if len(cells) > 8 else ""
-                            opt_d = cells[9] if len(cells) > 9 else ""
-                            correct_ans = cells[10] if len(cells) > 10 else ""
+            # Check MCQ / True-False header: e.g. "Câu 1 [UAV-C-M1-001 - Gốc: Câu 1]: ..."
+            m_mcq = re.match(r'^Câu\s+\d+\s*\[([^\]]+)\]\s*:\s*(.*)', t)
+            if m_mcq:
+                save_current_question(current_q)
+                raw_code = clean_text(m_mcq.group(1))
+                short_code = raw_code.split(' - ')[0].strip()
+                stem = clean_text(m_mcq.group(2))
+                current_q = {
+                    'code': short_code,
+                    'topic_id': cur_topic_id,
+                    'type': 'mcq',
+                    'stem': stem,
+                    'opt_a': '',
+                    'opt_b': '',
+                    'opt_c': '',
+                    'opt_d': '',
+                    'correct_answer': '',
+                    'explanation': '',
+                    'criteria': ''
+                }
+                continue
 
-                            q_type = "true_false" if ("đúng" in q_type_str.lower() or "sai" in q_type_str.lower() or "đúng/sai" in q_type_str.lower()) else "mcq"
+            # Check Oral header: e.g. "Câu hỏi vấn đáp 1 [UAV-V-M1-002 - Module 1]: ..."
+            m_oral = re.match(r'^Câu hỏi vấn đáp\s+\d+\s*\[([^\]]+)\]\s*:\s*(.*)', t)
+            if m_oral:
+                save_current_question(current_q)
+                raw_code = clean_text(m_oral.group(1))
+                short_code = raw_code.split(' - ')[0].strip()
+                stem = clean_text(m_oral.group(2))
+                current_q = {
+                    'code': short_code,
+                    'topic_id': cur_topic_id,
+                    'type': 'oral',
+                    'stem': stem,
+                    'opt_a': '',
+                    'opt_b': '',
+                    'opt_c': '',
+                    'opt_d': '',
+                    'correct_answer': '',
+                    'explanation': '',
+                    'criteria': ''
+                }
+                continue
 
-                            # If true/false and options are empty, provide standard options
-                            if q_type == "true_false":
-                                if not opt_a:
-                                    opt_a = "Đúng"
-                                if not opt_b:
-                                    opt_b = "Sai"
+            if not current_q:
+                continue
 
-                            # Initial helpful explanation based on question
-                            explanation = f"Căn cứ theo giáo trình huấn luyện tiêu chuẩn {hang_str} ({module_title}). Đáp án chính xác là: {correct_ans}."
+            # Process lines within the active question
+            if current_q['type'] != 'oral':
+                # Option A
+                if re.match(r'^A\.\s+', t):
+                    opt_val = re.sub(r'^[A-D]\.\s*', '', t)
+                    opt_val = re.sub(r'^[A-D]\.\s*', '', opt_val).strip()
+                    current_q['opt_a'] = opt_val
+                # Option B
+                elif re.match(r'^B\.\s+', t):
+                    opt_val = re.sub(r'^[A-D]\.\s*', '', t)
+                    opt_val = re.sub(r'^[A-D]\.\s*', '', opt_val).strip()
+                    current_q['opt_b'] = opt_val
+                # Option C
+                elif re.match(r'^C\.\s+', t):
+                    opt_val = re.sub(r'^[A-D]\.\s*', '', t)
+                    opt_val = re.sub(r'^[A-D]\.\s*', '', opt_val).strip()
+                    current_q['opt_c'] = opt_val
+                # Option D
+                elif re.match(r'^D\.\s+', t):
+                    opt_val = re.sub(r'^[A-D]\.\s*', '', t)
+                    opt_val = re.sub(r'^[A-D]\.\s*', '', opt_val).strip()
+                    current_q['opt_d'] = opt_val
+                # Answer line
+                elif 'đáp án đúng' in t.lower():
+                    ans_m = re.match(r'^[►\*\-]?\s*Đáp án đúng\s*:\s*(.*)', t, re.IGNORECASE)
+                    if ans_m:
+                        raw_ans = clean_text(ans_m.group(1))
+                        if 'đúng' in raw_ans.lower():
+                            current_q['type'] = 'true_false'
+                            current_q['correct_answer'] = 'Đúng'
+                            current_q['opt_a'] = 'Đúng'
+                            current_q['opt_b'] = 'Sai'
+                        elif 'sai' in raw_ans.lower():
+                            current_q['type'] = 'true_false'
+                            current_q['correct_answer'] = 'Sai'
+                            current_q['opt_a'] = 'Đúng'
+                            current_q['opt_b'] = 'Sai'
+                        else:
+                            # MCQ option letter
+                            letter_m = re.match(r'^([A-D])\.', raw_ans)
+                            if letter_m:
+                                current_q['correct_answer'] = letter_m.group(1)
+                            else:
+                                current_q['correct_answer'] = raw_ans
+                else:
+                    # Multi-line stem continuation before options
+                    if not current_q['opt_a'] and not current_q['correct_answer']:
+                        current_q['stem'] += ' ' + t
+            else:
+                # Oral answer lines
+                if 'hướng dẫn trả lời' in t.lower():
+                    h_m = re.match(r'^[►\*\-]?\s*Hướng dẫn trả lời\s*:\s*(.*)', t, re.IGNORECASE)
+                    if h_m:
+                        current_q['correct_answer'] = clean_text(h_m.group(1))
+                elif 'tiêu chí đạt' in t.lower():
+                    c_m = re.match(r'^[►\*\-]?\s*Tiêu chí đạt\s*:\s*(.*)', t, re.IGNORECASE)
+                    if c_m:
+                        current_q['criteria'] = clean_text(c_m.group(1))
+                else:
+                    if current_q.get('criteria'):
+                        current_q['criteria'] += ' ' + t
+                    elif current_q.get('correct_answer'):
+                        current_q['correct_answer'] += ' ' + t
+                    elif not current_q.get('correct_answer'):
+                        current_q['stem'] += ' ' + t
 
-                            cur.execute("""
-                                INSERT OR REPLACE INTO questions 
-                                (code, topic_id, module_id, question_type, bloom_level, target_role, stem, option_a, option_b, option_c, option_d, correct_answer, explanation)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (q_code, current_topic_id, module_id, q_type, bloom_level, target_role, stem, opt_a, opt_b, opt_c, opt_d, correct_ans, explanation))
-                            total_questions_imported += 1
+        # Save last question of the document
+        save_current_question(current_q)
 
-                    else:
-                        # Oral question table
-                        # Cols expected: [Mã ID, Đối tượng, Lĩnh vực, Câu hỏi vấn đáp, Đáp án / Hướng dẫn trả lời, Tiêu chí đạt, Câu hỏi gợi mở]
-                        if len(cells) >= 4:
-                            q_code = cells[0] if cells[0] else f"{module_id}_V{total_questions_imported+1}"
-                            target_role = cells[1] if len(cells) > 1 else ""
-                            stem = cells[3] if len(cells) > 3 else ""
-                            model_ans = cells[4] if len(cells) > 4 else ""
-                            criteria = cells[5] if len(cells) > 5 else ""
-                            followup = cells[6] if len(cells) > 6 else ""
-
-                            if not stem:
-                                continue
-
-                            explanation = f"Hướng dẫn chấm điểm: {model_ans}" if model_ans else "Đáp án chuẩn theo tài liệu giảng dạy."
-
-                            cur.execute("""
-                                INSERT OR REPLACE INTO questions 
-                                (code, topic_id, module_id, question_type, bloom_level, target_role, stem, correct_answer, passing_criteria, follow_up_question, explanation)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (q_code, current_topic_id, module_id, "oral", "Vận dụng", target_role, stem, model_ans, criteria, followup, explanation))
-                            total_questions_imported += 1
+        # Print module summary
+        cur.execute("SELECT COUNT(*) FROM questions WHERE module_id = ?", (module_id,))
+        mod_q_count = cur.fetchone()[0]
+        print(f"  -> Successfully imported {mod_q_count} questions for module {module_id}")
 
     conn.commit()
-    
-    # Check total count in DB
-    cur.execute("SELECT COUNT(*) FROM questions")
-    q_count = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM modules")
-    m_count = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM topics")
-    t_count = cur.fetchone()[0]
 
-    print("\n============================================")
-    print(f"[Import Success] Done!")
-    print(f"  -> Total Modules in DB:   {m_count}")
-    print(f"  -> Total Topics in DB:    {t_count}")
-    print(f"  -> Total Questions in DB: {q_count}")
-    print("============================================")
+    # Re-index
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_topic ON questions(topic_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_module ON questions(module_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_topics_module ON topics(module_id);")
+
+    # Final DB Verification
+    cur.execute("SELECT COUNT(*) FROM questions")
+    total_q = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM modules")
+    total_m = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM topics")
+    total_t = cur.fetchone()[0]
+
+    cur.execute("""
+        SELECT question_type, COUNT(*) 
+        FROM questions 
+        GROUP BY question_type
+    """)
+    type_counts = dict(cur.fetchall())
+
+    cur.execute("""
+        SELECT m.id, m.title, COUNT(q.id)
+        FROM modules m
+        LEFT JOIN questions q ON q.module_id = m.id
+        GROUP BY m.id
+        ORDER BY m.program_id ASC, m.order_num ASC
+    """)
+    mod_stats = cur.fetchall()
+
+    print("\n=======================================================")
+    print(f"DATABASE IMPORT COMPLETED SUCCESSFULLY!")
+    print(f"  • Total Modules:   {total_m}")
+    print(f"  • Total Topics:    {total_t}")
+    print(f"  • Total Questions: {total_q}")
+    print(f"  • Question Breakdown: {type_counts}")
+    print("-------------------------------------------------------")
+    for m_id, m_title, q_cnt in mod_stats:
+        print(f"  • [{q_cnt} câu] {m_id}: {m_title}")
+    print("=======================================================\n")
 
     conn.close()
 

@@ -106,20 +106,22 @@ exports.getCurriculumTree = (req, res, next) => {
     const tree = programs.map(p => {
       const pModules = modules.filter(m => m.program_id === p.id);
       
-      const categories = ['Lý Thuyết', 'Thực Hành'].map(cat => {
-        const catModules = pModules
-          .filter(m => m.category === cat)
-          .map(m => {
-            const mTopics = topics.filter(t => t.module_id === m.id);
-            return { ...m, topics: mTopics };
-          });
-        const catQuestions = catModules.reduce((acc, curr) => acc + (curr.total_questions || 0), 0);
-        return {
-          category: cat,
-          total_questions: catQuestions,
-          modules: catModules
-        };
-      });
+      const categories = ['Lý Thuyết', 'Thực Hành']
+        .map(cat => {
+          const catModules = pModules
+            .filter(m => m.category === cat)
+            .map(m => {
+              const mTopics = topics.filter(t => t.module_id === m.id);
+              return { ...m, topics: mTopics };
+            });
+          const catQuestions = catModules.reduce((acc, curr) => acc + (curr.total_questions || 0), 0);
+          return {
+            category: cat,
+            total_questions: catQuestions,
+            modules: catModules
+          };
+        })
+        .filter(cat => cat.modules.length > 0);
 
       return { 
         ...p, 

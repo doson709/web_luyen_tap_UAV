@@ -1,6 +1,6 @@
 // Unified API client for UAV Practice & Exam System
 
-const BASE_URL = '/api';
+const BASE_URL = (import.meta.env.BASE_URL ? import.meta.env.BASE_URL.replace(/\/$/, '') : '') + '/api';
 
 function getAuthHeader() {
   const token = localStorage.getItem('uav_token');

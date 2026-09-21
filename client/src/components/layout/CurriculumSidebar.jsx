@@ -69,7 +69,7 @@ export default function CurriculumSidebar({
 
         {/* Action controls: Collapse all / Expand all */}
         <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-200/70 text-[11px]">
-          <span className="text-slate-400 font-medium">4 tầng học phần</span>
+          <span className="text-slate-400 font-medium">Cấu trúc học phần</span>
           <div className="flex items-center space-x-2">
             <button
               onClick={expandAll}
@@ -135,7 +135,7 @@ export default function CurriculumSidebar({
                   {(program.categories || [
                     { category: 'Lý Thuyết', modules: program.modules?.filter(m => m.category === 'Lý Thuyết') || [] },
                     { category: 'Thực Hành', modules: program.modules?.filter(m => m.category === 'Thực Hành') || [] }
-                  ]).map(catGroup => {
+                  ]).filter(catGroup => (catGroup.modules || []).length > 0).map(catGroup => {
                     const catKey = `${program.id}_${catGroup.category}`;
                     const isCatExpanded = Boolean(expandedCategories[catKey]);
                     const isTheory = catGroup.category === 'Lý Thuyết';

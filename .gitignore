@@ -11,6 +11,7 @@ dist-ssr/
 # SQLite temporary files
 *.db-shm
 *.db-wal
+*.bak
 
 # Archives & packages
 *.tar.gz
