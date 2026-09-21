@@ -1,0 +1,15 @@
+{
+  "name": "uav-web-luyen-tap",
+  "version": "1.0.0",
+  "description": "Hệ thống Luyện tập & Chữa đề thi UAV phục vụ trình chiếu giảng dạy Zoom",
+  "scripts": {
+    "start": "node server/src/server.js",
+    "dev:server": "node server/src/server.js",
+    "dev:client": "npm --prefix client run dev",
+    "build:client": "npm --prefix client run build",
+    "import": "python server/src/scripts/import_docx.py"
+  },
+  "keywords": ["uav", "exam", "zoom", "practice"],
+  "author": "Phòng Huấn Luyện UAV",
+  "license": "ISC"
+}
