@@ -1,31 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
-import { 
-  CheckCircle2, XCircle, Lightbulb, Edit3, MonitorPlay, 
-  Search, Filter, Sparkles, Award, ArrowRight, RotateCcw, HelpCircle, BookOpen
+import {
+  CheckCircle2, XCircle, Lightbulb, Edit3, MonitorPlay, Award, HelpCircle, RotateCcw
 } from 'lucide-react';
 import ExplanationModal from '../questions/ExplanationModal';
 
-export default function PracticeView({ 
-  selectedModule, 
-  selectedTopic, 
+export default function PracticeView({
+  selectedModule,
+  selectedTopic,
   selectedCategory,
-  onLaunchZoom 
+  filterType,
+  onLaunchZoom
 }) {
-  const { canEditExplanation } = useAuth();
+  const { canEditExplanation, isTeacher } = useAuth();
 
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [filterType, setFilterType] = useState('all');
 
   const [userAnswers, setUserAnswers] = useState({});
   const [revealedAnswers, setRevealedAnswers] = useState({});
   const [revealedExplanations, setRevealedExplanations] = useState({});
   const [editingQuestion, setEditingQuestion] = useState(null);
 
-  const [scoreStats, setScoreStats] = useState({ totalDone: 0, correct: 0 });
+  const [progress, setProgress] = useState({ answered: 0, correct: 0, total: 0 });
 
   useEffect(() => {
     async function loadQuestions() {
@@ -35,7 +33,6 @@ export default function PracticeView({
         if (selectedModule) params.moduleId = selectedModule.id;
         if (selectedTopic) params.topicId = selectedTopic.id;
         if (filterType !== 'all') params.type = filterType;
-        if (searchKeyword.trim()) params.keyword = searchKeyword.trim();
 
         const res = await api.questions.list(params);
         if (res.success) {
@@ -43,7 +40,6 @@ export default function PracticeView({
           setUserAnswers({});
           setRevealedAnswers({});
           setRevealedExplanations({});
-          setScoreStats({ totalDone: 0, correct: 0 });
         }
       } catch (err) {
         console.error('Failed to load questions:', err);
@@ -52,32 +48,46 @@ export default function PracticeView({
       }
     }
     loadQuestions();
-  }, [selectedModule, selectedTopic, filterType, searchKeyword]);
+  }, [selectedModule, selectedTopic, filterType]);
+
+  useEffect(() => {
+    api.practice.getProgress()
+      .then(res => { if (res.success) setProgress(res.data); })
+      .catch(() => {});
+  }, []);
 
   const handleSelectOption = (questionId, optionKey) => {
+    if (revealedAnswers[questionId]) return;
     setUserAnswers(prev => ({ ...prev, [questionId]: optionKey }));
   };
 
   const handleCheckAnswer = (q) => {
-    const isAlreadyChecked = revealedAnswers[q.id];
-    if (!isAlreadyChecked) {
-      const userAns = userAnswers[q.id];
-      const isCorrect = userAns && (
-        String(userAns).trim().toLowerCase() === String(q.correct_answer).trim().toLowerCase() ||
-        (userAns === 'A' && String(q.correct_answer).startsWith('A')) ||
-        (userAns === 'B' && String(q.correct_answer).startsWith('B')) ||
-        (userAns === 'C' && String(q.correct_answer).startsWith('C')) ||
-        (userAns === 'D' && String(q.correct_answer).startsWith('D'))
-      );
-
-      setScoreStats(prev => ({
-        totalDone: prev.totalDone + 1,
-        correct: prev.correct + (isCorrect ? 1 : 0)
-      }));
-    }
+    if (revealedAnswers[q.id]) return;
+    const userAns = userAnswers[q.id];
+    const isCorrect = userAns && (
+      String(userAns).trim().toLowerCase() === String(q.correct_answer).trim().toLowerCase() ||
+      (userAns === 'A' && String(q.correct_answer).startsWith('A')) ||
+      (userAns === 'B' && String(q.correct_answer).startsWith('B')) ||
+      (userAns === 'C' && String(q.correct_answer).startsWith('C')) ||
+      (userAns === 'D' && String(q.correct_answer).startsWith('D'))
+    );
 
     setRevealedAnswers(prev => ({ ...prev, [q.id]: true }));
     setRevealedExplanations(prev => ({ ...prev, [q.id]: true }));
+
+    api.practice.recordAnswer({ questionId: q.id, isCorrect })
+      .then(res => { if (res.success) setProgress(prev => ({ ...prev, answered: res.data.answered, correct: res.data.correct })); })
+      .catch(() => {});
+  };
+
+  const handleResetQuestion = (qId) => {
+    setUserAnswers(prev => { const next = { ...prev }; delete next[qId]; return next; });
+    setRevealedAnswers(prev => { const next = { ...prev }; delete next[qId]; return next; });
+    setRevealedExplanations(prev => { const next = { ...prev }; delete next[qId]; return next; });
+
+    api.practice.deleteAnswer(qId)
+      .then(res => { if (res.success) setProgress(prev => ({ ...prev, answered: res.data.answered, correct: res.data.correct })); })
+      .catch(() => {});
   };
 
   const toggleExplanation = (qId) => {
@@ -93,7 +103,7 @@ export default function PracticeView({
     <div className="space-y-5 w-full">
       
       {/* 1. Header & Quick Actions - Synchronized Height Buttons */}
-      <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-xs flex flex-wrap items-center justify-between gap-4 sticky top-20 z-10">
         <div>
           <div className="flex items-center space-x-2 text-xs font-bold text-sky-600 uppercase tracking-wide">
             <span>{selectedModule ? selectedModule.title : 'Tất Cả Học Phần'}</span>
@@ -109,76 +119,25 @@ export default function PracticeView({
 
         {/* Buttons: Synchronized H-11 */}
         <div className="flex items-center space-x-3 flex-wrap">
-          <button
-            onClick={() => onLaunchZoom(questions, 0)}
-            disabled={questions.length === 0}
-            className="h-11 flex items-center space-x-2 px-5 bg-linear-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-sky-600/25 transition-all hover:scale-[1.02] cursor-pointer"
-          >
-            <MonitorPlay className="w-4 h-4" />
-            <span>Chiếu Zoom danh sách này ({questions.length})</span>
-          </button>
-
-          {scoreStats.totalDone > 0 && (
-            <div className="h-11 flex items-center space-x-2 px-4 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold">
-              <Award className="w-4 h-4 text-emerald-600" />
-              <span>Đúng: {scoreStats.correct}/{scoreStats.totalDone} ({Math.round((scoreStats.correct / scoreStats.totalDone) * 100)}%)</span>
-            </div>
+          {isTeacher && (
+            <button
+              onClick={() => onLaunchZoom(questions, 0)}
+              disabled={questions.length === 0}
+              className="h-11 flex items-center space-x-2 px-5 bg-linear-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-sky-600/25 transition-all hover:scale-[1.02] cursor-pointer"
+            >
+              <MonitorPlay className="w-4 h-4" />
+              <span>Chiếu Zoom danh sách này ({questions.length})</span>
+            </button>
           )}
+
+          <div className="h-11 flex items-center space-x-2 px-4 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold">
+            <Award className="w-4 h-4 text-emerald-600" />
+            <span>Đã trả lời: {progress.answered}/{progress.total} · Đúng: {progress.correct}</span>
+          </div>
         </div>
       </div>
 
-      {/* 2. Filter Bar: Search & Type Filter - Synchronized Height */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        {/* Search Input: H-11 */}
-        <div className="relative flex-1 min-w-[260px]">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchKeyword}
-            onChange={(e) => setSearchKeyword(e.target.value)}
-            placeholder="Tìm kiếm nội dung câu hỏi, mã ID, từ khóa..."
-            className="w-full h-11 pl-10 pr-4 text-xs sm:text-sm rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-slate-50 text-slate-900"
-          />
-        </div>
-
-        {/* Type Tabs: H-11 */}
-        <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl text-xs font-bold h-11">
-          <button
-            onClick={() => setFilterType('all')}
-            className={`h-9 px-3.5 rounded-lg transition-colors cursor-pointer flex items-center ${
-              filterType === 'all' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Tất cả ({questions.length})
-          </button>
-          <button
-            onClick={() => setFilterType('mcq')}
-            className={`h-9 px-3.5 rounded-lg transition-colors cursor-pointer flex items-center ${
-              filterType === 'mcq' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Trắc nghiệm
-          </button>
-          <button
-            onClick={() => setFilterType('true_false')}
-            className={`h-9 px-3.5 rounded-lg transition-colors cursor-pointer flex items-center ${
-              filterType === 'true_false' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Đúng / Sai
-          </button>
-          <button
-            onClick={() => setFilterType('oral')}
-            className={`h-9 px-3.5 rounded-lg transition-colors cursor-pointer flex items-center ${
-              filterType === 'oral' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Vấn đáp
-          </button>
-        </div>
-      </div>
-
-      {/* 3. Questions List Cards */}
+      {/* 2. Questions List Cards */}
       {loading ? (
         <div className="p-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
           <div className="w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
@@ -234,15 +193,17 @@ export default function PracticeView({
                     )}
                   </div>
 
-                  {/* Launch Zoom Directly from this Question */}
-                  <button
-                    onClick={() => onLaunchZoom(questions, idx)}
-                    className="h-9 flex items-center space-x-1.5 text-xs font-bold text-sky-700 hover:text-sky-900 hover:bg-sky-50 px-3 rounded-xl transition-colors cursor-pointer border border-sky-200"
-                    title="Chiếu ngay câu này lên màn hình Zoom"
-                  >
-                    <MonitorPlay className="w-4 h-4" />
-                    <span>Chiếu Zoom</span>
-                  </button>
+                  {/* Launch Zoom Directly from this Question (teachers/admins only) */}
+                  {isTeacher && (
+                    <button
+                      onClick={() => onLaunchZoom(questions, idx)}
+                      className="h-9 flex items-center space-x-1.5 text-xs font-bold text-sky-700 hover:text-sky-900 hover:bg-sky-50 px-3 rounded-xl transition-colors cursor-pointer border border-sky-200"
+                      title="Chiếu ngay câu này lên màn hình Zoom"
+                    >
+                      <MonitorPlay className="w-4 h-4" />
+                      <span>Chiếu Zoom</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Stem */}
@@ -272,8 +233,9 @@ export default function PracticeView({
                         return (
                           <button
                             type="button"
+                            disabled={isRevealed}
                             onClick={() => handleSelectOption(q.id, 'Đúng')}
-                            className={`h-13 px-4 rounded-xl border-2 flex items-center justify-center space-x-2 text-sm sm:text-base font-extrabold transition-all cursor-pointer ${btnClass}`}
+                            className={`h-13 px-4 rounded-xl border-2 flex items-center justify-center space-x-2 text-sm sm:text-base font-extrabold transition-all cursor-pointer disabled:cursor-not-allowed ${btnClass}`}
                           >
                             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                             <span>ĐÚNG</span>
@@ -299,8 +261,9 @@ export default function PracticeView({
                         return (
                           <button
                             type="button"
+                            disabled={isRevealed}
                             onClick={() => handleSelectOption(q.id, 'Sai')}
-                            className={`h-13 px-4 rounded-xl border-2 flex items-center justify-center space-x-2 text-sm sm:text-base font-extrabold transition-all cursor-pointer ${btnClass}`}
+                            className={`h-13 px-4 rounded-xl border-2 flex items-center justify-center space-x-2 text-sm sm:text-base font-extrabold transition-all cursor-pointer disabled:cursor-not-allowed ${btnClass}`}
                           >
                             <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
                             <span>SAI</span>
@@ -338,7 +301,7 @@ export default function PracticeView({
                           <div
                             key={opt.key}
                             onClick={() => handleSelectOption(q.id, opt.key)}
-                            className={`flex items-center space-x-3 p-3.5 rounded-xl border transition-all cursor-pointer min-h-[58px] ${btnStyle}`}
+                            className={`flex items-center space-x-3 p-3.5 rounded-xl border transition-all min-h-[58px] ${isRevealed ? 'cursor-not-allowed' : 'cursor-pointer'} ${btnStyle}`}
                           >
                             <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0 border ${keyBadgeStyle}`}>
                               {opt.key}
@@ -367,13 +330,23 @@ export default function PracticeView({
                 {/* Question Actions: Synchronized H-10 */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
                   <div className="flex items-center space-x-2">
-                    {!isOral && (
+                    {!isOral && !isRevealed && (
                       <button
                         onClick={() => handleCheckAnswer(q)}
                         className="h-10 flex items-center space-x-1.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         <span>Kiểm tra đáp án</span>
+                      </button>
+                    )}
+
+                    {isRevealed && (
+                      <button
+                        onClick={() => handleResetQuestion(q.id)}
+                        className="h-10 flex items-center space-x-1.5 px-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>Làm lại</span>
                       </button>
                     )}
 

@@ -19,6 +19,7 @@ function MainAppContent() {
   const [selectedTopic, setSelectedTopic] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [totalQuestions, setTotalQuestions] = useState(649);
+  const [filterType, setFilterType] = useState('all');
 
 
   // Zoom presentation state
@@ -118,6 +119,8 @@ function MainAppContent() {
               selectedModule={selectedModule}
               selectedTopic={selectedTopic}
               selectedCategory={selectedCategory}
+              filterType={filterType}
+              onSelectFilterType={setFilterType}
               onSelectModule={(mod) => setSelectedModule(mod)}
               onSelectTopic={(top) => setSelectedTopic(top)}
               onSelectCategory={(cat) => setSelectedCategory(cat)}
@@ -132,6 +135,7 @@ function MainAppContent() {
                 selectedModule={selectedModule}
                 selectedTopic={selectedTopic}
                 selectedCategory={selectedCategory}
+                filterType={filterType}
                 onLaunchZoom={handleLaunchZoom}
               />
             )}

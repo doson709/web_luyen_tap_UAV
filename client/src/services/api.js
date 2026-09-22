@@ -83,6 +83,9 @@ export const api = {
   practice: {
     submitAnswer: (payload) => request('/practice/submit', { method: 'POST', body: JSON.stringify(payload) }),
     createSession: (payload) => request('/practice/session', { method: 'POST', body: JSON.stringify(payload) }),
-    getStats: () => request('/practice/stats')
+    getStats: () => request('/practice/stats'),
+    recordAnswer: (payload) => request('/practice/answer', { method: 'POST', body: JSON.stringify(payload) }),
+    deleteAnswer: (questionId) => request(`/practice/answer/${questionId}`, { method: 'DELETE' }),
+    getProgress: () => request('/practice/progress')
   }
 };

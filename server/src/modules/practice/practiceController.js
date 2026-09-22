@@ -65,6 +65,70 @@ exports.createSession = (req, res, next) => {
   }
 };
 
+// Record/update a user's answer for a question (upsert, latest attempt wins)
+exports.recordAnswer = (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const questionId = Number(req.body.questionId);
+    const isCorrect = req.body.isCorrect ? 1 : 0;
+
+    if (!questionId) {
+      return res.status(400).json({ success: false, message: 'Thiếu questionId.' });
+    }
+
+    db.prepare(`
+      INSERT INTO user_progress (user_id, question_id, is_correct, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, question_id)
+      DO UPDATE SET is_correct = excluded.is_correct, updated_at = CURRENT_TIMESTAMP
+    `).run(userId, questionId, isCorrect);
+
+    const stats = db.prepare(
+      'SELECT COUNT(*) AS answered, COALESCE(SUM(is_correct), 0) AS correct FROM user_progress WHERE user_id = ?'
+    ).get(userId);
+
+    return res.json({ success: true, data: { answered: stats.answered, correct: stats.correct } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Remove a user's answer (used when "Làm lại" resets a question)
+exports.deleteAnswer = (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const questionId = Number(req.params.questionId);
+
+    db.prepare('DELETE FROM user_progress WHERE user_id = ? AND question_id = ?').run(userId, questionId);
+
+    const stats = db.prepare(
+      'SELECT COUNT(*) AS answered, COALESCE(SUM(is_correct), 0) AS correct FROM user_progress WHERE user_id = ?'
+    ).get(userId);
+
+    return res.json({ success: true, data: { answered: stats.answered, correct: stats.correct } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Get current user's cumulative progress
+exports.getProgress = (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const total = db.prepare('SELECT COUNT(*) AS count FROM questions').get().count;
+    const stats = db.prepare(
+      'SELECT COUNT(*) AS answered, COALESCE(SUM(is_correct), 0) AS correct FROM user_progress WHERE user_id = ?'
+    ).get(userId);
+
+    return res.json({
+      success: true,
+      data: { answered: stats.answered, correct: stats.correct, total }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // Get stats
 exports.getStats = (req, res, next) => {
   try {

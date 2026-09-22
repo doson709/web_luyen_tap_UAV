@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { MonitorPlay, BookOpen, Database, Users, LogIn, LogOut, User } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab, onOpenZoom, onOpenLogin }) {
-  const { user, isAuthenticated, isAdmin, logout } = useAuth();
+  const { user, isAuthenticated, isAdmin, isTeacher, logout } = useAuth();
 
   const getRoleBadge = (role) => {
     switch (role) {
@@ -91,15 +91,17 @@ export default function Navbar({ activeTab, setActiveTab, onOpenZoom, onOpenLogi
 
           {/* 3. Action Buttons: Zoom Presentation & User Profile (Synchronized H-10) */}
           <div className="flex items-center space-x-2.5 shrink-0">
-            {/* Zoom Presentation Button */}
-            <button
-              onClick={onOpenZoom}
-              className="h-10 flex items-center space-x-2 px-4 rounded-xl bg-linear-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-sm font-extrabold shadow-md shadow-sky-600/20 transition-all hover:scale-[1.02] cursor-pointer whitespace-nowrap"
-              title="Phóng to toàn màn hình tối ưu chia sẻ trên Zoom"
-            >
-              <MonitorPlay className="w-4 h-4 shrink-0" />
-              <span>TRÌNH CHIẾU ZOOM</span>
-            </button>
+            {/* Zoom Presentation Button (teachers/admins only) */}
+            {isTeacher && (
+              <button
+                onClick={onOpenZoom}
+                className="h-10 flex items-center space-x-2 px-4 rounded-xl bg-linear-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-sm font-extrabold shadow-md shadow-sky-600/20 transition-all hover:scale-[1.02] cursor-pointer whitespace-nowrap"
+                title="Phóng to toàn màn hình tối ưu chia sẻ trên Zoom"
+              >
+                <MonitorPlay className="w-4 h-4 shrink-0" />
+                <span>TRÌNH CHIẾU ZOOM</span>
+              </button>
+            )}
 
             {/* Auth User Info / Log out */}
             {isAuthenticated ? (

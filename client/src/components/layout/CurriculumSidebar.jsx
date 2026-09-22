@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, BookOpen, Layers, GraduationCap, Wrench, CheckCircle2 } from 'lucide-react';
 
-export default function CurriculumSidebar({ 
-  tree, 
-  selectedModule, 
-  selectedTopic, 
+export default function CurriculumSidebar({
+  tree,
+  selectedModule,
+  selectedTopic,
   selectedCategory,
-  onSelectModule, 
+  filterType,
+  onSelectFilterType,
+  onSelectModule,
   onSelectTopic,
   onSelectCategory,
   totalQuestions
@@ -107,6 +109,33 @@ export default function CurriculumSidebar({
             <span>Tất cả học phần ({totalQuestions || 649} câu)</span>
           </div>
         </button>
+
+        {/* Question Type Filter (Trắc nghiệm / Vấn đáp) */}
+        <div>
+          <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wide px-1 mb-1">
+            Loại câu hỏi
+          </span>
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => onSelectFilterType(filterType === 'mcq' ? 'all' : 'mcq')}
+              className={`flex-1 h-9 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                filterType === 'mcq' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Trắc nghiệm
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectFilterType(filterType === 'oral' ? 'all' : 'oral')}
+              className={`flex-1 h-9 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                filterType === 'oral' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Vấn đáp
+            </button>
+          </div>
+        </div>
 
         {/* Level 1: Programs (Hạng A, Hạng B) */}
         {tree.map(program => {

@@ -6,7 +6,10 @@ exports.listUsers = (req, res, next) => {
   try {
     const { search, role, status } = req.query;
 
-    let query = 'SELECT id, username, full_name, role, email, department, sso_id, is_active, created_at, last_login FROM users WHERE 1=1';
+    let query = `SELECT id, username, full_name, role, email, department, sso_id, is_active, created_at, last_login,
+      (SELECT COUNT(*) FROM user_progress up WHERE up.user_id = users.id) AS answered_count,
+      (SELECT COUNT(*) FROM user_progress up WHERE up.user_id = users.id AND up.is_correct = 1) AS correct_count
+      FROM users WHERE 1=1`;
     const params = [];
 
     if (search) {

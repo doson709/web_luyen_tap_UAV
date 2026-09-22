@@ -108,9 +108,20 @@ function initDatabase() {
       FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS user_progress (
+      user_id INTEGER NOT NULL,
+      question_id INTEGER NOT NULL,
+      is_correct INTEGER NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, question_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_questions_topic ON questions(topic_id);
     CREATE INDEX IF NOT EXISTS idx_questions_module ON questions(module_id);
     CREATE INDEX IF NOT EXISTS idx_topics_module ON topics(module_id);
+    CREATE INDEX IF NOT EXISTS idx_user_progress_user ON user_progress(user_id);
   `);
 
   // Seed initial default users if not exists

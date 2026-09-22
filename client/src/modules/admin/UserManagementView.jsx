@@ -195,6 +195,7 @@ export default function UserManagementView() {
                   <th className="py-3.5 px-4">Vai trò</th>
                   <th className="py-3.5 px-4">Đơn vị công tác</th>
                   <th className="py-3.5 px-4">Trạng thái</th>
+                  <th className="py-3.5 px-4 text-center">Tiến độ luyện tập</th>
                   <th className="py-3.5 px-4 text-center">Thao tác</th>
                 </tr>
               </thead>
@@ -231,6 +232,14 @@ export default function UserManagementView() {
                         }`}>
                           {u.is_active ? 'Hoạt động' : 'Đang khóa'}
                         </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="text-xs font-bold text-slate-700 whitespace-nowrap">
+                          {u.answered_count || 0} <span className="text-slate-400 font-medium">đã làm</span>
+                        </div>
+                        <div className="text-xs font-bold text-emerald-600 whitespace-nowrap mt-0.5">
+                          {u.correct_count || 0} <span className="text-slate-400 font-medium">đúng</span>
+                        </div>
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center space-x-2">
