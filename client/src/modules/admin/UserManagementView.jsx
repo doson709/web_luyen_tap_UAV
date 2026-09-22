@@ -4,7 +4,7 @@ import {
   Users, UserPlus, Shield, Key, Search, Edit2, 
   Trash2, CheckCircle, XCircle, AlertCircle, Building, Mail, 
   FolderPlus, ArrowLeft, GraduationCap, Award, ChevronRight,
-  Clock, BarChart3, CheckCheck, Eye, Phone
+  Clock, BarChart3, CheckCheck, Eye, Phone, RefreshCw
 } from 'lucide-react';
 import StudentProgressModal from './StudentProgressModal';
 
@@ -51,9 +51,9 @@ export default function UserManagementView() {
     }
   };
 
-  // Load students of selected class
-  const loadClassStudents = async (classId) => {
-    setStudentsLoading(true);
+  // Load students of selected class (silent mode prevents flickering spinner on background polls)
+  const loadClassStudents = async (classId, silent = false) => {
+    if (!silent) setStudentsLoading(true);
     try {
       const res = await api.classes.getStudents(classId);
       if (res.success) {
@@ -63,13 +63,23 @@ export default function UserManagementView() {
     } catch (err) {
       console.error('Failed to load class students:', err);
     } finally {
-      setStudentsLoading(false);
+      if (!silent) setStudentsLoading(false);
     }
   };
 
   useEffect(() => {
     loadClasses();
   }, []);
+
+  // Real-time background sync: update online/offline status & progress every 10s when viewing class
+  useEffect(() => {
+    if (selectedClass && selectedClass.id) {
+      const interval = setInterval(() => {
+        loadClassStudents(selectedClass.id, true);
+      }, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [selectedClass?.id]);
 
   const handleSelectClass = (cls) => {
     setSelectedClass(cls);
@@ -404,9 +414,20 @@ export default function UserManagementView() {
             </div>
 
             <div className="flex items-center space-x-2 text-xs font-bold">
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-200" title="Trạng thái online/offline và tiến độ tự động làm mới mỗi 10 giây">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Đồng bộ trực tiếp
+              </span>
               <span className="px-3 py-1.5 bg-sky-50 text-sky-800 rounded-xl border border-sky-200">
                 Sĩ số: <strong>{students.length}</strong> học viên
               </span>
+              <button
+                onClick={() => selectedClass && loadClassStudents(selectedClass.id)}
+                className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-xl transition-colors cursor-pointer border border-slate-200"
+                title="Làm mới ngay lập tức"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
@@ -887,6 +908,8 @@ export default function UserManagementView() {
             </form>
           </div>
         </div>
+      )}
+
       {/* Student Detailed Progress Modal */}
       {viewingStudentProgress && selectedClass && (
         <StudentProgressModal

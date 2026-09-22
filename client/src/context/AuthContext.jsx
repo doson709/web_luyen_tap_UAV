@@ -30,28 +30,48 @@ export function AuthProvider({ children }) {
     loadSession();
   }, []);
 
-  // Setup periodic heartbeat to maintain online status while logged in
+  // Setup periodic heartbeat to maintain online status while user has web open
   useEffect(() => {
     if (user && user.id) {
-      // Send initial heartbeat
+      // 1. Send initial heartbeat
       api.auth.heartbeat().catch(() => {});
 
-      // Send heartbeat every 45 seconds
+      // 2. Periodic heartbeat every 25 seconds (well within the 60s server window)
       heartbeatIntervalRef.current = setInterval(() => {
         api.auth.heartbeat().catch(() => {});
-      }, 45000);
+      }, 25000);
 
-      // Heartbeat on window focus
+      // 3. Heartbeat immediately when user refocuses or interacts with page
       const onFocus = () => {
         api.auth.heartbeat().catch(() => {});
       };
       window.addEventListener('focus', onFocus);
+
+      // 4. Handle tab/browser unload (sendBeacon logout to immediately mark offline)
+      const onUnload = () => {
+        const token = localStorage.getItem('uav_token');
+        if (token) {
+          const url = (import.meta.env.BASE_URL ? import.meta.env.BASE_URL.replace(/\/$/, '') : '') + '/api/auth/logout';
+          try {
+            fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              keepalive: true
+            }).catch(() => {});
+          } catch (e) {}
+        }
+      };
+      window.addEventListener('beforeunload', onUnload);
 
       return () => {
         if (heartbeatIntervalRef.current) {
           clearInterval(heartbeatIntervalRef.current);
         }
         window.removeEventListener('focus', onFocus);
+        window.removeEventListener('beforeunload', onUnload);
       };
     }
   }, [user]);
