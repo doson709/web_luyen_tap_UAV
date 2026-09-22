@@ -18,24 +18,29 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/uav-web/api/health'], (req, res) => {
   res.json({ status: 'ok', service: 'UAV Practice & Exam API', timestamp: new Date().toISOString() });
 });
 
-// Mount API modules
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/classes', classRoutes);
-app.use('/api/curriculum', curriculumRoutes);
-app.use('/api/questions', questionRoutes);
-app.use('/api/practice', practiceRoutes);
+// Mount API modules (hỗ trợ cả /api và /uav-web/api)
+const mountApis = (prefix) => {
+  app.use(`${prefix}/auth`, authRoutes);
+  app.use(`${prefix}/users`, userRoutes);
+  app.use(`${prefix}/classes`, classRoutes);
+  app.use(`${prefix}/curriculum`, curriculumRoutes);
+  app.use(`${prefix}/questions`, questionRoutes);
+  app.use(`${prefix}/practice`, practiceRoutes);
+};
+mountApis('/api');
+mountApis('/uav-web/api');
 
 // Serve static frontend from client/dist if built
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
 if (fs.existsSync(clientDistPath)) {
+  app.use('/uav-web', express.static(clientDistPath));
   app.use(express.static(clientDistPath));
   app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    if (req.method === 'GET' && !req.path.includes('/api')) {
       return res.sendFile(path.join(clientDistPath, 'index.html'));
     }
     next();
