@@ -71,23 +71,24 @@ exports.recordAnswer = (req, res, next) => {
     const userId = req.user.id;
     const questionId = Number(req.body.questionId);
     const isCorrect = req.body.isCorrect ? 1 : 0;
+    const selectedAnswer = req.body.selectedAnswer ? String(req.body.selectedAnswer) : null;
+    const { moduleId, topicId } = req.body;
+
+    if (moduleId) req.query.moduleId = moduleId;
+    if (topicId) req.query.topicId = topicId;
 
     if (!questionId) {
       return res.status(400).json({ success: false, message: 'Thiếu questionId.' });
     }
 
     db.prepare(`
-      INSERT INTO user_progress (user_id, question_id, is_correct, updated_at)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO user_progress (user_id, question_id, is_correct, selected_answer, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(user_id, question_id)
-      DO UPDATE SET is_correct = excluded.is_correct, updated_at = CURRENT_TIMESTAMP
-    `).run(userId, questionId, isCorrect);
+      DO UPDATE SET is_correct = excluded.is_correct, selected_answer = excluded.selected_answer, updated_at = CURRENT_TIMESTAMP
+    `).run(userId, questionId, isCorrect, selectedAnswer);
 
-    const stats = db.prepare(
-      'SELECT COUNT(*) AS answered, COALESCE(SUM(is_correct), 0) AS correct FROM user_progress WHERE user_id = ?'
-    ).get(userId);
-
-    return res.json({ success: true, data: { answered: stats.answered, correct: stats.correct } });
+    return exports.getProgress(req, res, next);
   } catch (err) {
     next(err);
   }
@@ -101,28 +102,148 @@ exports.deleteAnswer = (req, res, next) => {
 
     db.prepare('DELETE FROM user_progress WHERE user_id = ? AND question_id = ?').run(userId, questionId);
 
-    const stats = db.prepare(
-      'SELECT COUNT(*) AS answered, COALESCE(SUM(is_correct), 0) AS correct FROM user_progress WHERE user_id = ?'
-    ).get(userId);
-
-    return res.json({ success: true, data: { answered: stats.answered, correct: stats.correct } });
+    return exports.getProgress(req, res, next);
   } catch (err) {
     next(err);
   }
 };
 
-// Get current user's cumulative progress
+// Reset all answers within current selected scope (module, topic, or all mode questions)
+exports.resetScope = (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { moduleId, topicId, filterType } = req.body;
+
+    let typeFilterClause = " AND q.question_type IN ('mcq', 'true_false')";
+    if (filterType === 'oral') {
+      typeFilterClause = " AND q.question_type = 'oral'";
+    } else if (filterType === 'all') {
+      typeFilterClause = "";
+    }
+
+    if (topicId) {
+      db.prepare(`
+        DELETE FROM user_progress
+        WHERE user_id = ? AND question_id IN (
+          SELECT id FROM questions WHERE topic_id = ?
+        )
+      `).run(userId, topicId);
+    } else if (moduleId) {
+      db.prepare(`
+        DELETE FROM user_progress
+        WHERE user_id = ? AND question_id IN (
+          SELECT q.id FROM questions q WHERE q.module_id = ? ${typeFilterClause}
+        )
+      `).run(userId, moduleId);
+    } else {
+      db.prepare(`
+        DELETE FROM user_progress
+        WHERE user_id = ? AND question_id IN (
+          SELECT q.id FROM questions q WHERE 1=1 ${typeFilterClause}
+        )
+      `).run(userId);
+    }
+
+    if (moduleId) req.query.moduleId = moduleId;
+    if (topicId) req.query.topicId = topicId;
+    if (filterType) req.query.filterType = filterType;
+
+    return exports.getProgress(req, res, next);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Get current user's cumulative progress (both overall and scoped to module/topic)
 exports.getProgress = (req, res, next) => {
   try {
     const userId = req.user.id;
-    const total = db.prepare('SELECT COUNT(*) AS count FROM questions').get().count;
-    const stats = db.prepare(
-      'SELECT COUNT(*) AS answered, COALESCE(SUM(is_correct), 0) AS correct FROM user_progress WHERE user_id = ?'
-    ).get(userId);
+    const moduleId = req.query?.moduleId || req.body?.moduleId || null;
+    const topicId = req.query?.topicId || req.body?.topicId || null;
+    const filterType = req.query?.filterType || req.body?.filterType || req.query?.type || 'mcq';
+
+    // Type filter clause for SQL
+    let typeFilterClause = " AND q.question_type IN ('mcq', 'true_false')";
+    let typeFilterTotal = " WHERE question_type IN ('mcq', 'true_false')";
+    if (filterType === 'oral') {
+      typeFilterClause = " AND q.question_type = 'oral'";
+      typeFilterTotal = " WHERE question_type = 'oral'";
+    } else if (filterType === 'all') {
+      typeFilterClause = "";
+      typeFilterTotal = "";
+    }
+
+    // Overall stats based on filterType (default 600 MCQ or 49 Oral)
+    const total = db.prepare(`SELECT COUNT(*) AS count FROM questions ${typeFilterTotal}`).get().count;
+    const overallStats = db.prepare(`
+      SELECT COUNT(*) AS answered, COALESCE(SUM(up.is_correct), 0) AS correct 
+      FROM user_progress up
+      JOIN questions q ON q.id = up.question_id
+      WHERE up.user_id = ? ${typeFilterClause}
+    `).get(userId);
+
+    // Scoped stats for selected module / topic
+    let scopedTotal = total;
+    let scopedAnswered = overallStats.answered;
+    let scopedCorrect = overallStats.correct;
+    let scopedName = filterType === 'oral' ? 'Tất cả câu hỏi Vấn đáp (49 câu)' : 'Tất cả học phần Trắc nghiệm (600 câu)';
+    let isFiltered = false;
+
+    if (topicId) {
+      isFiltered = true;
+      const topicObj = db.prepare('SELECT title FROM topics WHERE id = ?').get(topicId);
+      if (topicObj) scopedName = topicObj.title;
+
+      scopedTotal = db.prepare('SELECT COUNT(*) AS count FROM questions WHERE topic_id = ?').get(topicId).count;
+      const topicStats = db.prepare(`
+        SELECT COUNT(*) AS answered, COALESCE(SUM(up.is_correct), 0) AS correct 
+        FROM user_progress up
+        JOIN questions q ON q.id = up.question_id
+        WHERE up.user_id = ? AND q.topic_id = ?
+      `).get(userId, topicId);
+      scopedAnswered = topicStats.answered;
+      scopedCorrect = topicStats.correct;
+    } else if (moduleId) {
+      isFiltered = true;
+      const modObj = db.prepare('SELECT title FROM modules WHERE id = ?').get(moduleId);
+      if (modObj) scopedName = modObj.title;
+
+      scopedTotal = db.prepare(`SELECT COUNT(*) AS count FROM questions q WHERE q.module_id = ? ${typeFilterClause}`).get(moduleId).count;
+      const modStats = db.prepare(`
+        SELECT COUNT(*) AS answered, COALESCE(SUM(up.is_correct), 0) AS correct 
+        FROM user_progress up
+        JOIN questions q ON q.id = up.question_id
+        WHERE up.user_id = ? AND q.module_id = ? ${typeFilterClause}
+      `).get(userId, moduleId);
+      scopedAnswered = modStats.answered;
+      scopedCorrect = modStats.correct;
+    }
+
+    // Map of answered questions for quick client-side lookup
+    const answeredMap = {};
+    const userAnswers = db.prepare('SELECT question_id, is_correct, selected_answer FROM user_progress WHERE user_id = ?').all(userId);
+    userAnswers.forEach(row => {
+      answeredMap[row.question_id] = {
+        isCorrect: Boolean(row.is_correct),
+        selectedAnswer: row.selected_answer
+      };
+    });
 
     return res.json({
       success: true,
-      data: { answered: stats.answered, correct: stats.correct, total }
+      data: {
+        total,
+        answered: overallStats.answered,
+        correct: overallStats.correct,
+        scoped: {
+          total: scopedTotal,
+          answered: scopedAnswered,
+          correct: scopedCorrect,
+          name: scopedName,
+          isFiltered
+        },
+        userAnswersMap: answeredMap
+      }
     });
   } catch (err) {
     next(err);

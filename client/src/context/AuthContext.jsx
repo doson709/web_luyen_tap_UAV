@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 
 const AuthContext = createContext(null);
@@ -6,6 +6,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const heartbeatIntervalRef = useRef(null);
 
   // Check existing session on mount
   useEffect(() => {
@@ -29,6 +30,32 @@ export function AuthProvider({ children }) {
     loadSession();
   }, []);
 
+  // Setup periodic heartbeat to maintain online status while logged in
+  useEffect(() => {
+    if (user && user.id) {
+      // Send initial heartbeat
+      api.auth.heartbeat().catch(() => {});
+
+      // Send heartbeat every 45 seconds
+      heartbeatIntervalRef.current = setInterval(() => {
+        api.auth.heartbeat().catch(() => {});
+      }, 45000);
+
+      // Heartbeat on window focus
+      const onFocus = () => {
+        api.auth.heartbeat().catch(() => {});
+      };
+      window.addEventListener('focus', onFocus);
+
+      return () => {
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+        }
+        window.removeEventListener('focus', onFocus);
+      };
+    }
+  }, [user]);
+
   const login = async (username, password) => {
     const res = await api.auth.login({ username, password });
     if (res.success) {
@@ -49,9 +76,18 @@ export function AuthProvider({ children }) {
     throw new Error(res.message || 'Đăng nhập không thành công');
   };
 
-  const logout = () => {
-    localStorage.removeItem('uav_token');
-    setUser(null);
+  const logout = async () => {
+    try {
+      await api.auth.logout();
+    } catch (e) {
+      // Ignore network errors on logout
+    } finally {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+      }
+      localStorage.removeItem('uav_token');
+      setUser(null);
+    }
   };
 
   const value = {

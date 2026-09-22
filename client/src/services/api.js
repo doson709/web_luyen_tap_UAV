@@ -33,7 +33,9 @@ export const api = {
   auth: {
     login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
     ssoLogin: (ssoPayload) => request('/auth/sso-login', { method: 'POST', body: JSON.stringify(ssoPayload) }),
-    getMe: () => request('/auth/me')
+    getMe: () => request('/auth/me'),
+    heartbeat: () => request('/auth/heartbeat', { method: 'POST' }),
+    logout: () => request('/auth/logout', { method: 'POST' })
   },
 
   // Users & Roles (Admin)
@@ -45,6 +47,18 @@ export const api = {
     create: (user) => request('/users', { method: 'POST', body: JSON.stringify(user) }),
     update: (id, user) => request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(user) }),
     delete: (id) => request(`/users/${id}`, { method: 'DELETE' })
+  },
+
+  // Classes & Students Management (Admin)
+  classes: {
+    list: () => request('/classes'),
+    create: (data) => request('/classes', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/classes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id) => request(`/classes/${id}`, { method: 'DELETE' }),
+    getStudents: (classId) => request(`/classes/${classId}/students`),
+    addStudent: (classId, studentData) => request(`/classes/${classId}/students`, { method: 'POST', body: JSON.stringify(studentData) }),
+    removeStudent: (classId, studentId) => request(`/classes/${classId}/students/${studentId}`, { method: 'DELETE' }),
+    getStudentProgressDetail: (classId, studentId) => request(`/classes/${classId}/students/${studentId}/progress-detail`)
   },
 
   // Curriculum & Structure
@@ -85,7 +99,14 @@ export const api = {
     createSession: (payload) => request('/practice/session', { method: 'POST', body: JSON.stringify(payload) }),
     getStats: () => request('/practice/stats'),
     recordAnswer: (payload) => request('/practice/answer', { method: 'POST', body: JSON.stringify(payload) }),
-    deleteAnswer: (questionId) => request(`/practice/answer/${questionId}`, { method: 'DELETE' }),
-    getProgress: () => request('/practice/progress')
+    deleteAnswer: (questionId, params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request(`/practice/answer/${questionId}?${q}`, { method: 'DELETE' });
+    },
+    resetScope: (payload) => request('/practice/reset-scope', { method: 'POST', body: JSON.stringify(payload) }),
+    getProgress: (params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request(`/practice/progress?${q}`);
+    }
   }
 };

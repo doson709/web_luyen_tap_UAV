@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../../config/db');
 const config = require('../../config/config');
+const { touchUser, removeUser } = require('../../utils/onlineTracker');
 
 function generateToken(user) {
   return jwt.sign(
@@ -11,30 +12,50 @@ function generateToken(user) {
   );
 }
 
-// Local login
+// Local login with Email / Username & Phone / Password
 exports.login = (req, res, next) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
-      return res.status(400).json({ success: false, message: 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.' });
+      return res.status(400).json({ success: false, message: 'Sai thông tin' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username.trim());
+    const trimmedInput = String(username).trim();
+    const trimmedPass = String(password).trim();
+
+    // Find user by email, username, or phone
+    const user = db.prepare(`
+      SELECT * FROM users 
+      WHERE (email = ? AND email IS NOT NULL AND email != '')
+         OR username = ?
+         OR (phone = ? AND phone IS NOT NULL AND phone != '')
+    `).get(trimmedInput, trimmedInput, trimmedInput);
+
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Tên đăng nhập hoặc mật khẩu không chính xác.' });
+      return res.status(401).json({ success: false, message: 'Sai thông tin' });
     }
 
     if (!user.is_active) {
       return res.status(403).json({ success: false, message: 'Tài khoản của bạn đang bị khóa. Vui lòng liên hệ quản trị viên.' });
     }
 
-    const isMatch = bcrypt.compareSync(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Tên đăng nhập hoặc mật khẩu không chính xác.' });
+    // Verify password: Admin (admin / admin) or bcrypt check or direct phone match
+    let isMatch = false;
+    if (user.username === 'admin' && (trimmedPass === 'admin' || bcrypt.compareSync(trimmedPass, user.password_hash))) {
+      isMatch = true;
+    } else if (bcrypt.compareSync(trimmedPass, user.password_hash)) {
+      isMatch = true;
+    } else if (user.phone && user.phone.trim() === trimmedPass) {
+      isMatch = true;
     }
 
-    // Update last_login
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Sai thông tin' });
+    }
+
+    // Update last_login and mark online
     db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+    touchUser(user.id);
 
     const token = generateToken(user);
 
@@ -48,7 +69,10 @@ exports.login = (req, res, next) => {
         full_name: user.full_name,
         role: user.role,
         email: user.email,
-        department: user.department
+        phone: user.phone,
+        department: user.department,
+        unit: user.unit,
+        class_id: user.class_id
       }
     });
   } catch (err) {
@@ -91,6 +115,7 @@ exports.ssoLogin = (req, res, next) => {
     }
 
     db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+    touchUser(user.id);
     const token = generateToken(user);
 
     return res.json({
@@ -111,8 +136,27 @@ exports.ssoLogin = (req, res, next) => {
   }
 };
 
+// Heartbeat to keep session online
+exports.heartbeat = (req, res) => {
+  if (req.user && req.user.id) {
+    touchUser(req.user.id);
+  }
+  return res.json({ success: true, is_online: true });
+};
+
+// Logout to mark offline immediately
+exports.logout = (req, res) => {
+  if (req.user && req.user.id) {
+    removeUser(req.user.id);
+  }
+  return res.json({ success: true, message: 'Đăng xuất thành công.' });
+};
+
 // Get current profile
 exports.getMe = (req, res) => {
+  if (req.user && req.user.id) {
+    touchUser(req.user.id);
+  }
   return res.json({
     success: true,
     user: req.user

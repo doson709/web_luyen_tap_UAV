@@ -3,12 +3,13 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { 
   Search, Plus, Edit, Trash2, CheckCircle2, Eye, Filter, 
-  HelpCircle, BookOpen, Sparkles 
+  HelpCircle, BookOpen, Sparkles, Lock, GraduationCap 
 } from 'lucide-react';
 import ExplanationModal from './ExplanationModal';
 
 export default function QuestionBankView({ selectedModule, selectedTopic }) {
-  const { canEditExplanation, isAdmin } = useAuth();
+  const { user, canEditExplanation, isAdmin, isTeacher } = useAuth();
+  const isAuthorized = isAdmin || isTeacher;
 
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +18,10 @@ export default function QuestionBankView({ selectedModule, selectedTopic }) {
   const [editingQuestion, setEditingQuestion] = useState(null);
 
   const loadQuestions = async () => {
+    if (!isAuthorized) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const params = {};
@@ -37,12 +42,38 @@ export default function QuestionBankView({ selectedModule, selectedTopic }) {
   };
 
   useEffect(() => {
-    loadQuestions();
-  }, [selectedModule, selectedTopic, typeFilter, keyword]);
+    if (isAuthorized) {
+      loadQuestions();
+    } else {
+      setLoading(false);
+    }
+  }, [selectedModule, selectedTopic, typeFilter, keyword, isAuthorized]);
 
   const handleExplanationSaved = (updatedQ) => {
     setQuestions(prev => prev.map(q => q.id === updatedQ.id ? updatedQ : q));
   };
+
+  // If regular user/student: Display notice and do not show any questions
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-[420px] bg-white rounded-2xl border border-slate-200/90 shadow-xs p-8 sm:p-12 flex flex-col items-center justify-center text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mb-5 shadow-xs">
+          <Lock className="w-8 h-8" />
+        </div>
+        <h3 className="text-xl sm:text-2xl font-black text-slate-900 mb-2">
+          Tài Liệu Ngân Hàng Câu Hỏi
+        </h3>
+        <div className="max-w-md p-4 bg-amber-50/80 border border-amber-200/80 rounded-xl mb-4">
+          <p className="text-sm sm:text-base font-bold text-amber-900">
+            Bạn cần hoàn thành khóa học để lấy tài liệu Ngân hàng câu hỏi
+          </p>
+        </div>
+        <p className="text-xs sm:text-sm text-slate-500 max-w-lg leading-relaxed">
+          Vui lòng hoàn thành đầy đủ các bài luyện tập trắc nghiệm và câu hỏi vấn đáp trong chương trình huấn luyện để đủ điều kiện nhận tài liệu ngân hàng câu hỏi chính thức.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

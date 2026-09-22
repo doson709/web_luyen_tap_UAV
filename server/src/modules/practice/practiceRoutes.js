@@ -9,6 +9,7 @@ router.get('/stats', practiceController.getStats);
 
 router.post('/answer', authenticateToken, practiceController.recordAnswer);
 router.delete('/answer/:questionId', authenticateToken, practiceController.deleteAnswer);
+router.post('/reset-scope', authenticateToken, practiceController.resetScope);
 router.get('/progress', authenticateToken, practiceController.getProgress);
 
 module.exports = router;

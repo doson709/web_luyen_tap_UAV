@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config/config');
 const db = require('../config/db');
+const { touchUser } = require('../utils/onlineTracker');
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -18,6 +19,9 @@ function authenticateToken(req, res, next) {
     if (!user || !user.is_active) {
       return res.status(403).json({ success: false, message: 'Tài khoản không tồn tại hoặc đã bị khóa.' });
     }
+
+    // Touch user in onlineTracker
+    touchUser(user.id);
 
     req.user = user;
     next();

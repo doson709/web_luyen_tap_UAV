@@ -1,8 +1,8 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { MonitorPlay, BookOpen, Database, Users, LogIn, LogOut, User } from 'lucide-react';
+import { BookOpen, Database, Users, LogIn, LogOut, User } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab, onOpenZoom, onOpenLogin }) {
+export default function Navbar({ activeTab, setActiveTab, onOpenLogin }) {
   const { user, isAuthenticated, isAdmin, isTeacher, logout } = useAuth();
 
   const getRoleBadge = (role) => {
@@ -43,7 +43,7 @@ export default function Navbar({ activeTab, setActiveTab, onOpenZoom, onOpenLogi
                 </span>
               </div>
               <span className="text-[11px] font-semibold text-slate-400 whitespace-nowrap hidden sm:inline-block">
-                Hệ Thống Luyện Tập & Chữa Đề Zoom
+                Hệ Thống Luyện Tập & Sát Hạch UAV
               </span>
             </div>
           </div>
@@ -53,20 +53,20 @@ export default function Navbar({ activeTab, setActiveTab, onOpenZoom, onOpenLogi
             <button
               onClick={() => setActiveTab('practice')}
               className={`h-10 flex items-center space-x-2 px-4 rounded-xl text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === 'practice'
+                activeTab === 'practice' || activeTab === 'oral'
                   ? 'bg-sky-50 text-sky-700 border border-sky-200 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
               <BookOpen className="w-4 h-4 shrink-0 text-sky-600" />
-              <span>Luyện tập & Chữa đề</span>
+              <span>Luyện tập & Sát hạch</span>
             </button>
 
             <button
               onClick={() => setActiveTab('questions')}
               className={`h-10 flex items-center space-x-2 px-4 rounded-xl text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
                 activeTab === 'questions'
-                  ? 'bg-sky-50 text-sky-700 border border-sky-200 shadow-xs'
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -77,7 +77,7 @@ export default function Navbar({ activeTab, setActiveTab, onOpenZoom, onOpenLogi
             {isAdmin && (
               <button
                 onClick={() => setActiveTab('admin')}
-                className={`h-10 flex items-center space-x-2 px-4 rounded-xl text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
+                className={`h-10 flex items-center space-x-2 px-3.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer ${
                   activeTab === 'admin'
                     ? 'bg-rose-50 text-rose-700 border border-rose-200 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -89,19 +89,8 @@ export default function Navbar({ activeTab, setActiveTab, onOpenZoom, onOpenLogi
             )}
           </nav>
 
-          {/* 3. Action Buttons: Zoom Presentation & User Profile (Synchronized H-10) */}
+          {/* 3. User Profile & Auth (Synchronized H-10) */}
           <div className="flex items-center space-x-2.5 shrink-0">
-            {/* Zoom Presentation Button (teachers/admins only) */}
-            {isTeacher && (
-              <button
-                onClick={onOpenZoom}
-                className="h-10 flex items-center space-x-2 px-4 rounded-xl bg-linear-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-sm font-extrabold shadow-md shadow-sky-600/20 transition-all hover:scale-[1.02] cursor-pointer whitespace-nowrap"
-                title="Phóng to toàn màn hình tối ưu chia sẻ trên Zoom"
-              >
-                <MonitorPlay className="w-4 h-4 shrink-0" />
-                <span>TRÌNH CHIẾU ZOOM</span>
-              </button>
-            )}
 
             {/* Auth User Info / Log out */}
             {isAuthenticated ? (
