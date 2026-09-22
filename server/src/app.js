@@ -9,6 +9,7 @@ const userRoutes = require('./modules/users/userRoutes');
 const curriculumRoutes = require('./modules/curriculum/curriculumRoutes');
 const questionRoutes = require('./modules/questions/questionRoutes');
 const practiceRoutes = require('./modules/practice/practiceRoutes');
+const classRoutes = require('./modules/classes/classRoutes');
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.get('/api/health', (req, res) => {
 // Mount API modules
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/classes', classRoutes);
 app.use('/api/curriculum', curriculumRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/practice', practiceRoutes);

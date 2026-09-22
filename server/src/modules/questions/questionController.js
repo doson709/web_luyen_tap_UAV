@@ -30,8 +30,12 @@ exports.listQuestions = (req, res, next) => {
     }
 
     if (type && type !== 'all') {
-      query += ' AND q.question_type = ?';
-      params.push(type);
+      if (type === 'mcq' || type === 'mcq_all' || type === 'objective') {
+        query += " AND q.question_type IN ('mcq', 'true_false')";
+      } else {
+        query += ' AND q.question_type = ?';
+        params.push(type);
+      }
     }
 
     if (keyword) {

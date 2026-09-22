@@ -6,47 +6,38 @@ import CurriculumSidebar from './components/layout/CurriculumSidebar';
 import PracticeView from './modules/practice/PracticeView';
 import QuestionBankView from './modules/questions/QuestionBankView';
 import UserManagementView from './modules/admin/UserManagementView';
-import ZoomPresentationView from './modules/presentation/ZoomPresentationView';
 import LoginPage from './modules/auth/LoginPage';
 import LoginModal from './modules/auth/LoginModal';
 
 function MainAppContent() {
   const { user, isAuthenticated, isAdmin, loading } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('practice');
+  const [activeTab, setActiveTab] = useState('practice'); // 'practice' (Trắc nghiệm - 600 câu) | 'oral' (Vấn đáp - 49 câu) | 'questions' | 'admin'
   const [curriculumTree, setCurriculumTree] = useState([]);
+  const [oralTopics, setOralTopics] = useState([]);
+  const [stats, setStats] = useState({ totalMcq: 600, totalOral: 49, totalAll: 649 });
+
   const [selectedModule, setSelectedModule] = useState(null);
   const [selectedTopic, setSelectedTopic] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [totalQuestions, setTotalQuestions] = useState(649);
-  const [filterType, setFilterType] = useState('all');
-
-
-  // Zoom presentation state
-  const [zoomState, setZoomState] = useState({
-    isOpen: false,
-    questions: [],
-    initialIndex: 0,
-    moduleTitle: '',
-    topicTitle: ''
-  });
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
-  // Load curriculum tree
+  // Load curriculum tree & oral sections
   useEffect(() => {
     async function loadTree() {
       try {
         const res = await api.curriculum.getTree();
-        if (res.success) {
-          setCurriculumTree(res.data);
-          let count = 0;
-          res.data.forEach(p => {
-            p.modules?.forEach(m => {
-              count += m.total_questions || 0;
-            });
-          });
-          if (count > 0) setTotalQuestions(count);
+        if (res.success && res.data) {
+          if (Array.isArray(res.data)) {
+            setCurriculumTree(res.data);
+          } else {
+            setCurriculumTree(res.data.tree || []);
+            setOralTopics(res.data.oralTopics || []);
+            if (res.data.stats) {
+              setStats(res.data.stats);
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to load curriculum tree:', err);
@@ -55,30 +46,12 @@ function MainAppContent() {
     loadTree();
   }, []);
 
-  const handleLaunchZoom = (questionsToPresent, initialIndex = 0) => {
-    setZoomState({
-      isOpen: true,
-      questions: questionsToPresent,
-      initialIndex,
-      moduleTitle: selectedModule ? selectedModule.title : 'Toàn bộ học phần',
-      topicTitle: selectedTopic ? selectedTopic.title : ''
-    });
-  };
-
-  const handleOpenGeneralZoom = async () => {
-    try {
-      const params = {};
-      if (selectedModule) params.moduleId = selectedModule.id;
-      if (selectedTopic) params.topicId = selectedTopic.id;
-      const res = await api.questions.list(params);
-      if (res.success && res.data.length > 0) {
-        handleLaunchZoom(res.data, 0);
-      } else {
-        alert('Không có câu hỏi nào để trình chiếu trong mục này.');
-      }
-    } catch (err) {
-      alert('Không thể tải bộ câu hỏi để trình chiếu.');
-    }
+  // When switching between 'practice' (Trắc nghiệm) and 'oral' (Vấn đáp), reset selections
+  const handleSelectMode = (newMode) => {
+    setActiveTab(newMode);
+    setSelectedModule(null);
+    setSelectedTopic(null);
+    setSelectedCategory(null);
   };
 
   if (loading) {
@@ -103,40 +76,56 @@ function MainAppContent() {
       {/* 1. Header Navbar (Wide, Edge-to-Edge) */}
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenZoom={handleOpenGeneralZoom}
+        setActiveTab={(tab) => {
+          setActiveTab(tab);
+          setSelectedModule(null);
+          setSelectedTopic(null);
+          setSelectedCategory(null);
+        }}
         onOpenLogin={() => setIsLoginModalOpen(true)}
       />
 
-      {/* 2. Main Full-Width Responsive Container: Maximizing space on wide displays */}
+      {/* 2. Main Full-Width Responsive Container */}
       <div className="w-full px-3 sm:px-6 lg:px-8 xl:px-10 py-5 flex-1 flex flex-col">
         <div className="flex flex-col lg:flex-row gap-5 items-start flex-1 w-full">
           
-          {/* Left Sidebar: 4-Level Curriculum Tree (Sticky Fixed Position) */}
-          <div className="w-full lg:w-84 xl:w-92 shrink-0 lg:sticky lg:top-20 z-20">
-            <CurriculumSidebar
-              tree={curriculumTree}
-              selectedModule={selectedModule}
-              selectedTopic={selectedTopic}
-              selectedCategory={selectedCategory}
-              filterType={filterType}
-              onSelectFilterType={setFilterType}
-              onSelectModule={(mod) => setSelectedModule(mod)}
-              onSelectTopic={(top) => setSelectedTopic(top)}
-              onSelectCategory={(cat) => setSelectedCategory(cat)}
-              totalQuestions={totalQuestions}
-            />
-          </div>
+          {/* Left Sidebar: Filter tree for MCQ (600 câu) vs Oral (49 câu) */}
+          {(activeTab === 'practice' || activeTab === 'oral' || activeTab === 'questions') && (
+            <div className="w-full lg:w-84 xl:w-92 shrink-0 lg:sticky lg:top-20 z-20">
+              <CurriculumSidebar
+                activeMode={activeTab === 'oral' ? 'oral' : 'practice'}
+                onSelectMode={handleSelectMode}
+                tree={curriculumTree}
+                oralTopics={oralTopics}
+                selectedModule={selectedModule}
+                selectedTopic={selectedTopic}
+                selectedCategory={selectedCategory}
+                onSelectModule={(mod) => setSelectedModule(mod)}
+                onSelectTopic={(top) => setSelectedTopic(top)}
+                onSelectCategory={(cat) => setSelectedCategory(cat)}
+                totalMcq={stats.totalMcq}
+                totalOral={stats.totalOral}
+              />
+            </div>
+          )}
 
           {/* Right Main Column: Full remaining width utilized */}
           <div className="flex-1 min-w-0 w-full">
             {activeTab === 'practice' && (
               <PracticeView
+                mode="practice"
                 selectedModule={selectedModule}
                 selectedTopic={selectedTopic}
                 selectedCategory={selectedCategory}
-                filterType={filterType}
-                onLaunchZoom={handleLaunchZoom}
+              />
+            )}
+
+            {activeTab === 'oral' && (
+              <PracticeView
+                mode="oral"
+                selectedModule={selectedModule}
+                selectedTopic={selectedTopic}
+                selectedCategory={selectedCategory}
               />
             )}
 
@@ -157,21 +146,10 @@ function MainAppContent() {
 
       {/* 3. Footer */}
       <footer className="bg-white border-t border-slate-200 py-3.5 px-4 text-center text-xs text-slate-500 shrink-0">
-        Hệ thống Luyện tập & Chữa đề Sát hạch Huấn luyện UAV • Phục vụ giảng dạy trực tuyến Zoom • Căn cứ Quyết định 3906/QĐ-PKKQ & 2426/QĐ-BQP
+        Hệ thống Luyện tập & Sát hạch Huấn luyện UAV • Căn cứ Quyết định 3906/QĐ-PKKQ & 2426/QĐ-BQP
       </footer>
 
-      {/* 4. Fullscreen Zoom Presentation View */}
-      {zoomState.isOpen && (
-        <ZoomPresentationView
-          questions={zoomState.questions}
-          initialIndex={zoomState.initialIndex}
-          moduleTitle={zoomState.moduleTitle}
-          topicTitle={zoomState.topicTitle}
-          onClose={() => setZoomState(prev => ({ ...prev, isOpen: false }))}
-        />
-      )}
-
-      {/* 5. Switch Account / Login Modal */}
+      {/* 4. Switch Account / Login Modal */}
       <LoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}

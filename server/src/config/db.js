@@ -111,6 +111,7 @@ function initDatabase() {
     CREATE TABLE IF NOT EXISTS user_progress (
       user_id INTEGER NOT NULL,
       question_id INTEGER NOT NULL,
+      selected_answer TEXT,
       is_correct INTEGER NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (user_id, question_id),
@@ -118,11 +119,53 @@ function initDatabase() {
       FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS classes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_questions_topic ON questions(topic_id);
     CREATE INDEX IF NOT EXISTS idx_questions_module ON questions(module_id);
     CREATE INDEX IF NOT EXISTS idx_topics_module ON topics(module_id);
     CREATE INDEX IF NOT EXISTS idx_user_progress_user ON user_progress(user_id);
   `);
+
+  try {
+    db.exec('ALTER TABLE user_progress ADD COLUMN selected_answer TEXT');
+  } catch (e) {
+    // Column already exists
+  }
+
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL');
+  } catch (e) {
+    // Column already exists
+  }
+
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN phone TEXT');
+  } catch (e) {
+    // Column already exists
+  }
+
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN unit TEXT');
+  } catch (e) {
+    // Column already exists
+  }
+
+  // Seed default class if not exists
+  const checkClass = db.prepare('SELECT COUNT(*) as count FROM classes').get();
+  if (checkClass.count === 0) {
+    const res = db.prepare('INSERT INTO classes (name, description) VALUES (?, ?)').run(
+      'Lớp Huấn Luyện & Sát Hạch UAV Khóa 01 - 2026',
+      'Lớp đào tạo, sát hạch tiêu chuẩn người điều khiển UAV theo Quyết định 3906/QĐ-PKKQ'
+    );
+    // Link existing students without class to class 1
+    db.prepare("UPDATE users SET class_id = ? WHERE role = 'student' AND class_id IS NULL").run(res.lastInsertRowid);
+  }
 
   // Seed initial default users if not exists
   const checkUser = db.prepare('SELECT COUNT(*) as count FROM users').get();
